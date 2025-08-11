@@ -40,14 +40,26 @@ document.addEventListener('DOMContentLoaded', () => {
         if (obtainmentData.type === 'craft') {
             const recipe = obtainmentData;
             const li = document.createElement('li');
-            li.appendChild(createChecklistItem(`Craft using ${recipe.tradeskill} (Trivial: ${recipe.trivial}) in a ${recipe.container}`));
+            li.appendChild(createChecklistItem(`Craft using ${recipe.tradeskill || 'N/A'} (Trivial: ${recipe.trivial || 'N/A'}) in a ${recipe.container || 'N/A'}`));
 
             const componentsUl = document.createElement('ul');
             if (recipe.components) {
                 recipe.components.forEach(comp => {
                     const compLi = document.createElement('li');
-                    compLi.appendChild(createChecklistItem(`${comp.qty} x ${comp.item_name}`));
-                    compLi.appendChild(renderObtainmentTree(comp.obtainment));
+                    // Add a click handler to the component to fetch its tree
+                    const itemLabel = createChecklistItem(`${comp.qty} x ${comp.item_name}`);
+                    itemLabel.style.cursor = 'pointer';
+                    itemLabel.addEventListener('click', (e) => {
+                        e.stopPropagation(); // Prevent the parent from firing its click event
+                        // You could replace this with a more advanced inline display
+                        getObtainInfo(comp.item_id, comp.item_name);
+                    });
+                    compLi.appendChild(itemLabel);
+
+                    // Render the sub-tree if it exists
+                    if(comp.obtainment) {
+                        compLi.appendChild(renderObtainmentTree(comp.obtainment));
+                    }
                     componentsUl.appendChild(compLi);
                 });
             }
@@ -69,66 +81,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const header = document.createElement('h3');
         header.textContent = `Checklist for ${itemName}`;
         breakdownContainer.appendChild(header);
-        breakdownContainer.appendChild(renderObtainmentTree(data));
+        if (data) {
+            breakdownContainer.appendChild(renderObtainmentTree(data));
+        } else {
+            breakdownContainer.innerHTML += '<p>No obtainment information found.</p>';
+        }
     }
 
     async function getObtainInfo(itemId, itemName) {
         breakdownContainer.innerHTML = `<p>Fetching details for ${itemName}...</p>`;
+        const { data, error } = await supabaseClient.rpc('get_full_obtainment_details', { p_item_id: itemId });
 
-        const { data: recipeEntries, error: recipeError } = await supabaseClient
-            .from('tradeskill_recipe_entries')
-            .select('recipe_id')
-            .eq('item_id', itemId)
-            .neq('successcount', 0);
-
-        if (recipeError) {
-            breakdownContainer.innerHTML = `<p>Error checking recipes: ${recipeError.message}</p>`;
+        if (error) {
+            console.error(`Error fetching details for ${itemName}:`, error);
+            breakdownContainer.innerHTML = `<p>Error fetching details: ${error.message}</p>`;
             return;
         }
-
-        if (recipeEntries && recipeEntries.length > 0) {
-            const recipePromises = recipeEntries.map(async (entry) => {
-                const recipeId = entry.recipe_id;
-
-                const { data: recipeData } = await supabaseClient.from('tradeskill_recipe').select('name,trivial').eq('id', recipeId).single();
-
-                const { data: containerEntry } = await supabaseClient.from('tradeskill_recipe_entries').select('item_id').eq('recipe_id', recipeId).eq('iscontainer', 1).single();
-                let containerName = 'None';
-                if (containerEntry) {
-                    const { data: containerItem } = await supabaseClient.from('items').select('name').eq('id', containerEntry.item_id).single();
-                    if (containerItem) containerName = containerItem.name;
-                }
-
-                const { data: componentEntries } = await supabaseClient.from('tradeskill_recipe_entries').select('item_id,componentcount').eq('recipe_id', recipeId).neq('componentcount', 0);
-                let components = [];
-                if (componentEntries && componentEntries.length > 0) {
-                    const componentIds = componentEntries.map(c => c.item_id);
-                    const { data: componentItems } = await supabaseClient.from('items').select('id,name').in('id', componentIds);
-                    const itemNamesById = componentItems.reduce((acc, item) => { acc[item.id] = item.name; return acc; }, {});
-
-                    const componentPromises = componentEntries.map(async (c) => {
-                        const obtainment = await getObtainInfo(c.item_id, itemNamesById[c.item_id]);
-                        return {
-                            name: itemNamesById[c.item_id] || 'Unknown Item',
-                            qty: c.componentcount,
-                            obtainment: obtainment // Recursive call result
-                        };
-                    });
-                    components = await Promise.all(componentPromises);
-                }
-
-                return {
-                    recipe_name: recipeData ? recipeData.name : 'Unknown',
-                    trivial: recipeData ? recipeData.trivial : 'N/A',
-                    container: containerName,
-                    components: components
-                };
-            });
-            const recipes = await Promise.all(recipePromises);
-            return { type: 'craft', recipes: recipes };
-        } else {
-            return { type: 'drop' }; // Simplified drop logic
-        }
+        renderBreakdown(data, itemName);
     }
 
     // --- Main Table Rendering ---
@@ -188,10 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentItems.forEach(item => {
             const row = document.createElement('tr');
             row.style.cursor = 'pointer';
-            row.addEventListener('click', async () => {
-                const obtainmentData = await getObtainInfo(item.id, item.name);
-                renderBreakdown(obtainmentData, item.name);
-            });
+            row.addEventListener('click', () => getObtainInfo(item.id, item.name));
 
             headers.forEach(header => {
                 const cell = document.createElement('td');

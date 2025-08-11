@@ -164,3 +164,27 @@ hr {
     font-style: italic;
     color: #888;
 }
+
+nav {
+    background-color: var(--container-bg);
+    padding: 0.5em 2em;
+    border-bottom: 1px solid var(--border-color);
+    margin: -2em -2em 2em -2em;
+}
+
+nav a {
+    color: var(--text-color);
+    text-decoration: none;
+    padding: 1em;
+    transition: background-color 0.2s;
+}
+
+nav a:hover {
+    background-color: #444;
+}
+
+nav a.active {
+    color: var(--primary-color);
+    font-weight: bold;
+    border-bottom: 2px solid var(--primary-color);
+}
