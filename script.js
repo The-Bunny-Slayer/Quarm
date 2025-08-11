@@ -16,13 +16,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSort = { column: 'name', direction: 'asc' };
 
     // --- Recursive Breakdown Rendering ---
-    function createChecklistItem(text) {
+    function createChecklistItem(text, isHtml = false) {
         const label = document.createElement('label');
         label.className = 'checklist-item';
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         label.appendChild(checkbox);
-        label.appendChild(document.createTextNode(' ' + text));
+        if (isHtml) {
+            const contentSpan = document.createElement('span');
+            contentSpan.innerHTML = ' ' + text;
+            label.appendChild(contentSpan);
+        } else {
+            label.appendChild(document.createTextNode(' ' + text));
+        }
         return label;
     }
 
@@ -40,23 +46,34 @@ document.addEventListener('DOMContentLoaded', () => {
         if (obtainmentData.type === 'craft') {
             const recipe = obtainmentData;
             const li = document.createElement('li');
-            li.appendChild(createChecklistItem(`Craft using ${recipe.tradeskill || 'N/A'} (Trivial: ${recipe.trivial || 'N/A'}) in a ${recipe.container || 'N/A'}`));
+
+            let craftText = `Craft with ${recipe.tradeskill || 'N/A'} (Trivial: ${recipe.trivial || 'N/A'})`;
+            if (recipe.tradeskill === 100) { // Quest
+                craftText = `Quest Hand-in`;
+            }
+            li.appendChild(createChecklistItem(craftText));
+
+            if (recipe.notes) {
+                const notesP = document.createElement('p');
+                notesP.className = 'quest-notes';
+                notesP.textContent = recipe.notes;
+                li.appendChild(notesP);
+            }
 
             const componentsUl = document.createElement('ul');
             if (recipe.components) {
                 recipe.components.forEach(comp => {
                     const compLi = document.createElement('li');
-                    // Add a click handler to the component to fetch its tree
                     const itemLabel = createChecklistItem(`${comp.qty} x ${comp.item_name}`);
                     itemLabel.style.cursor = 'pointer';
+                    itemLabel.title = 'Click to see breakdown for this component';
                     itemLabel.addEventListener('click', (e) => {
-                        e.stopPropagation(); // Prevent the parent from firing its click event
-                        // You could replace this with a more advanced inline display
+                        e.preventDefault();
+                        e.stopPropagation();
                         getObtainInfo(comp.item_id, comp.item_name);
                     });
                     compLi.appendChild(itemLabel);
 
-                    // Render the sub-tree if it exists
                     if(comp.obtainment) {
                         compLi.appendChild(renderObtainmentTree(comp.obtainment));
                     }
@@ -67,11 +84,37 @@ document.addEventListener('DOMContentLoaded', () => {
             ul.appendChild(li);
 
         } else if (obtainmentData.type === 'drop') {
-            obtainmentData.sources.forEach(source => {
+            const sourcesByZone = obtainmentData.sources.reduce((acc, source) => {
+                const zone = source.zone_name || 'Unknown Zone';
+                if (!acc[zone]) acc[zone] = [];
+                acc[zone].push(source.npc_name);
+                return acc;
+            }, {});
+
+            for (const zoneName in sourcesByZone) {
                 const li = document.createElement('li');
-                li.appendChild(createChecklistItem(`Dropped by ${source.npc_name} in ${source.zone_name}`));
+                const details = document.createElement('details');
+                const summary = document.createElement('summary');
+
+                const summaryText = `Dropped in <span class="zone-name">${zoneName}</span>`;
+                summary.innerHTML = summaryText;
+                details.appendChild(summary);
+
+                const npcUl = document.createElement('ul');
+                sourcesByZone[zoneName].forEach(npcName => {
+                    const npcLi = document.createElement('li');
+                    const checklistLabel = createChecklistItem('');
+                    const npcSpan = document.createElement('span');
+                    npcSpan.className = 'npc-name';
+                    npcSpan.textContent = npcName;
+                    checklistLabel.appendChild(npcSpan);
+                    npcLi.appendChild(checklistLabel);
+                    npcUl.appendChild(npcLi);
+                });
+                details.appendChild(npcUl);
+                li.appendChild(details);
                 ul.appendChild(li);
-            });
+            }
         }
         return ul;
     }
@@ -101,7 +144,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Main Table Rendering ---
-    function sortAndRender() {
+    function sortAndRender() { /* ... unchanged ... */ }
+    function handleHeaderClick(e) { /* ... unchanged ... */ }
+    function drawTable() { /* ... unchanged ... */ }
+    function renderNewResults(items) { /* ... unchanged ... */ }
+
+    // --- Initial Data Loaders ---
+    async function performSearch(query) { /* ... unchanged ... */ }
+    testButton.addEventListener('click', () => { /* ... unchanged ... */ });
+    searchButton.addEventListener('click', () => { /* ... unchanged ... */ });
+
+    // Re-paste unchanged functions
+    sortAndRender = function() {
         if (currentSort.column) {
             currentItems.sort((a, b) => {
                 const valA = a[currentSort.column];
@@ -118,8 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         drawTable();
     }
-
-    function handleHeaderClick(e) {
+    handleHeaderClick = function(e) {
         const column = e.target.dataset.column;
         if (currentSort.column === column) {
             currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
@@ -129,19 +182,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         sortAndRender();
     }
-
-    function drawTable() {
+    drawTable = function() {
         resultsContainer.innerHTML = '';
         if (!currentItems || currentItems.length === 0) return;
-
         const table = document.createElement('table');
         table.className = 'results-table';
         const thead = document.createElement('thead');
         const tbody = document.createElement('tbody');
         const headerRow = document.createElement('tr');
-
         const headers = ['name', 'itemtype', 'ac', 'hp', 'mana', 'astr', 'asta', 'adex', 'aagi', 'awis', 'aint', 'acha', 'mr', 'cr', 'fr', 'pr', 'dr'];
-
         headers.forEach(key => {
             const th = document.createElement('th');
             th.textContent = key;
@@ -153,12 +202,10 @@ document.addEventListener('DOMContentLoaded', () => {
             headerRow.appendChild(th);
         });
         thead.appendChild(headerRow);
-
         currentItems.forEach(item => {
             const row = document.createElement('tr');
             row.style.cursor = 'pointer';
             row.addEventListener('click', () => getObtainInfo(item.id, item.name));
-
             headers.forEach(header => {
                 const cell = document.createElement('td');
                 cell.textContent = item[header] || '0';
@@ -166,20 +213,16 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             tbody.appendChild(row);
         });
-
         table.appendChild(thead);
         table.appendChild(tbody);
         resultsContainer.appendChild(table);
     }
-
-    function renderNewResults(items) {
+    renderNewResults = function(items) {
         currentItems = items;
         currentSort = { column: 'name', direction: 'asc' };
         sortAndRender();
     }
-
-    // --- Initial Data Loaders ---
-    async function performSearch(query) {
+    performSearch = async function(query) {
         const { data, error } = await query;
         if (error) {
             resultsContainer.innerHTML = `<p>Error: ${error.message}</p>`;
@@ -187,12 +230,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         renderNewResults(data || []);
     }
-
     testButton.addEventListener('click', () => {
         resultsContainer.innerHTML = '<p>Fetching all data...</p>';
         performSearch(supabaseClient.from('items').select('*'));
     });
-
     searchButton.addEventListener('click', () => {
         const searchTerm = searchInput.value;
         if (!searchTerm) {
