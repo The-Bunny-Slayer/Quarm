@@ -149,3 +149,18 @@ hr {
     box-shadow: 0 5px 15px rgba(0,0,0,0.5);
     white-space: normal;
 }
+
+.obtainment-list {
+    list-style-type: none;
+    padding-left: 20px;
+}
+
+.checklist-item {
+    display: block;
+    margin: 5px 0;
+}
+
+.unknown-source {
+    font-style: italic;
+    color: #888;
+}

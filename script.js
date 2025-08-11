@@ -11,34 +11,65 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchButton = document.getElementById('search-button');
     const resultsContainer = document.getElementById('results-container');
     const breakdownContainer = document.getElementById('breakdown-container');
-    const tooltip = document.getElementById('tooltip');
 
     let currentItems = [];
     let currentSort = { column: 'name', direction: 'asc' };
 
-    // --- Tooltip Functions ---
-    function showTooltip(item, event) { /* ... existing code ... */ }
-    function hideTooltip() { /* ... existing code ... */ }
+    // --- Recursive Breakdown Rendering ---
+    function createChecklistItem(text) {
+        const label = document.createElement('label');
+        label.className = 'checklist-item';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(' ' + text));
+        return label;
+    }
 
-    // --- Data Fetching and Rendering for Breakdown ---
-    function renderBreakdown(data, itemName) {
-        let content = `<h3>Obtainment Info for ${itemName}</h3>`;
-        if (data.type === 'craft') {
-            content += '<h4>Recipes:</h4>';
-            data.recipes.forEach(recipe => {
-                content += `<div class="recipe">
-                    <p><strong>Recipe:</strong> ${recipe.recipe_name} (Trivial: ${recipe.trivial})</p>
-                    <p><strong>Container:</strong> ${recipe.container}</p>
-                    <strong>Components:</strong>
-                    <ul>
-                        ${recipe.components.map(c => `<li>${c.qty} x ${c.name}</li>`).join('')}
-                    </ul>
-                </div>`;
-            });
-        } else {
-            content += '<p>This item is a drop or a base component. Drop info not yet implemented.</p>';
+    function renderObtainmentTree(obtainmentData) {
+        if (!obtainmentData || (obtainmentData.type === 'drop' && !obtainmentData.sources)) {
+            const textNode = document.createElement('span');
+            textNode.textContent = ' (Vendor or Ground Spawn)';
+            textNode.className = 'unknown-source';
+            return textNode;
         }
-        breakdownContainer.innerHTML = content;
+
+        const ul = document.createElement('ul');
+        ul.className = 'obtainment-list';
+
+        if (obtainmentData.type === 'craft') {
+            const recipe = obtainmentData;
+            const li = document.createElement('li');
+            li.appendChild(createChecklistItem(`Craft using ${recipe.tradeskill} (Trivial: ${recipe.trivial}) in a ${recipe.container}`));
+
+            const componentsUl = document.createElement('ul');
+            if (recipe.components) {
+                recipe.components.forEach(comp => {
+                    const compLi = document.createElement('li');
+                    compLi.appendChild(createChecklistItem(`${comp.qty} x ${comp.item_name}`));
+                    compLi.appendChild(renderObtainmentTree(comp.obtainment));
+                    componentsUl.appendChild(compLi);
+                });
+            }
+            li.appendChild(componentsUl);
+            ul.appendChild(li);
+
+        } else if (obtainmentData.type === 'drop') {
+            obtainmentData.sources.forEach(source => {
+                const li = document.createElement('li');
+                li.appendChild(createChecklistItem(`Dropped by ${source.npc_name} in ${source.zone_name}`));
+                ul.appendChild(li);
+            });
+        }
+        return ul;
+    }
+
+    function renderBreakdown(data, itemName) {
+        breakdownContainer.innerHTML = '';
+        const header = document.createElement('h3');
+        header.textContent = `Checklist for ${itemName}`;
+        breakdownContainer.appendChild(header);
+        breakdownContainer.appendChild(renderObtainmentTree(data));
     }
 
     async function getObtainInfo(itemId, itemName) {
@@ -59,10 +90,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const recipePromises = recipeEntries.map(async (entry) => {
                 const recipeId = entry.recipe_id;
 
-                // Get recipe metadata
                 const { data: recipeData } = await supabaseClient.from('tradeskill_recipe').select('name,trivial').eq('id', recipeId).single();
 
-                // Get container (manual join)
                 const { data: containerEntry } = await supabaseClient.from('tradeskill_recipe_entries').select('item_id').eq('recipe_id', recipeId).eq('iscontainer', 1).single();
                 let containerName = 'None';
                 if (containerEntry) {
@@ -70,22 +99,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (containerItem) containerName = containerItem.name;
                 }
 
-                // Get components (manual join)
                 const { data: componentEntries } = await supabaseClient.from('tradeskill_recipe_entries').select('item_id,componentcount').eq('recipe_id', recipeId).neq('componentcount', 0);
                 let components = [];
                 if (componentEntries && componentEntries.length > 0) {
                     const componentIds = componentEntries.map(c => c.item_id);
                     const { data: componentItems } = await supabaseClient.from('items').select('id,name').in('id', componentIds);
+                    const itemNamesById = componentItems.reduce((acc, item) => { acc[item.id] = item.name; return acc; }, {});
 
-                    const itemNamesById = componentItems.reduce((acc, item) => {
-                        acc[item.id] = item.name;
-                        return acc;
-                    }, {});
-
-                    components = componentEntries.map(c => ({
-                        name: itemNamesById[c.item_id] || 'Unknown Item',
-                        qty: c.componentcount
-                    }));
+                    const componentPromises = componentEntries.map(async (c) => {
+                        const obtainment = await getObtainInfo(c.item_id, itemNamesById[c.item_id]);
+                        return {
+                            name: itemNamesById[c.item_id] || 'Unknown Item',
+                            qty: c.componentcount,
+                            obtainment: obtainment // Recursive call result
+                        };
+                    });
+                    components = await Promise.all(componentPromises);
                 }
 
                 return {
@@ -96,25 +125,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
             });
             const recipes = await Promise.all(recipePromises);
-            renderBreakdown({ type: 'craft', recipes: recipes }, itemName);
+            return { type: 'craft', recipes: recipes };
         } else {
-            renderBreakdown({ type: 'drop' }, itemName);
+            return { type: 'drop' }; // Simplified drop logic
         }
     }
 
     // --- Main Table Rendering ---
-    function sortAndRender() { /* ... unchanged ... */ }
-    function handleHeaderClick(e) { /* ... unchanged ... */ }
-    function drawTable() { /* ... unchanged ... */ }
-    function renderNewResults(items) { /* ... unchanged ... */ }
-
-    // --- Initial Data Loaders ---
-    async function performSearch(query) { /* ... unchanged ... */ }
-    testButton.addEventListener('click', () => { /* ... unchanged ... */ });
-    searchButton.addEventListener('click', () => { /* ... unchanged ... */ });
-
-    // Re-paste the unchanged functions here to be safe
-    sortAndRender = function() {
+    function sortAndRender() {
         if (currentSort.column) {
             currentItems.sort((a, b) => {
                 const valA = a[currentSort.column];
@@ -131,7 +149,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         drawTable();
     }
-    handleHeaderClick = function(e) {
+
+    function handleHeaderClick(e) {
         const column = e.target.dataset.column;
         if (currentSort.column === column) {
             currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
@@ -141,23 +160,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         sortAndRender();
     }
-    drawTable = function() {
+
+    function drawTable() {
         resultsContainer.innerHTML = '';
         if (!currentItems || currentItems.length === 0) return;
+
         const table = document.createElement('table');
         table.className = 'results-table';
         const thead = document.createElement('thead');
         const tbody = document.createElement('tbody');
         const headerRow = document.createElement('tr');
-        const headerSet = new Set();
-        currentItems.forEach(item => {
-            Object.keys(item).forEach(key => {
-                if (key !== 'id' && item[key] !== null && item[key] !== 0 && item[key] !== -1 && item[key] !== '') {
-                    headerSet.add(key);
-                }
-            });
-        });
-        const headers = Array.from(headerSet).sort();
+
+        const headers = ['name', 'itemtype', 'ac', 'hp', 'mana', 'astr', 'asta', 'adex', 'aagi', 'awis', 'aint', 'acha', 'mr', 'cr', 'fr', 'pr', 'dr'];
+
         headers.forEach(key => {
             const th = document.createElement('th');
             th.textContent = key;
@@ -169,28 +184,36 @@ document.addEventListener('DOMContentLoaded', () => {
             headerRow.appendChild(th);
         });
         thead.appendChild(headerRow);
+
         currentItems.forEach(item => {
             const row = document.createElement('tr');
-            row.addEventListener('click', () => getObtainInfo(item.id, item.name));
-            row.addEventListener('mouseenter', (e) => showTooltip(item, e));
-            row.addEventListener('mouseleave', hideTooltip);
+            row.style.cursor = 'pointer';
+            row.addEventListener('click', async () => {
+                const obtainmentData = await getObtainInfo(item.id, item.name);
+                renderBreakdown(obtainmentData, item.name);
+            });
+
             headers.forEach(header => {
                 const cell = document.createElement('td');
-                cell.textContent = item[header] || '';
+                cell.textContent = item[header] || '0';
                 row.appendChild(cell);
             });
             tbody.appendChild(row);
         });
+
         table.appendChild(thead);
         table.appendChild(tbody);
         resultsContainer.appendChild(table);
     }
-    renderNewResults = function(items) {
+
+    function renderNewResults(items) {
         currentItems = items;
         currentSort = { column: 'name', direction: 'asc' };
         sortAndRender();
     }
-    performSearch = async function(query) {
+
+    // --- Initial Data Loaders ---
+    async function performSearch(query) {
         const { data, error } = await query;
         if (error) {
             resultsContainer.innerHTML = `<p>Error: ${error.message}</p>`;
@@ -198,10 +221,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         renderNewResults(data || []);
     }
+
     testButton.addEventListener('click', () => {
         resultsContainer.innerHTML = '<p>Fetching all data...</p>';
         performSearch(supabaseClient.from('items').select('*'));
     });
+
     searchButton.addEventListener('click', () => {
         const searchTerm = searchInput.value;
         if (!searchTerm) {
