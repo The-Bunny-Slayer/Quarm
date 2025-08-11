@@ -98,3 +98,16 @@ hr {
 .results-table tbody tr:hover {
     background-color: #3a3a3a;
 }
+
+#tooltip {
+    position: absolute;
+    padding: 15px;
+    background-color: #111;
+    border: 1px solid var(--primary-color);
+    border-radius: 5px;
+    pointer-events: none;
+    z-index: 100;
+    max-width: 400px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+    white-space: normal;
+}
