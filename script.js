@@ -4,40 +4,36 @@ const SUPABASE_ANON_KEY = "sb_publishable_-OSudPLAgltcZ4ZdjWZvbw_ezCRZPnM";
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 console.log("script.js loaded");
 
+// --- DATA MAPPINGS ---
 const headerMap = {
     icon: 'Icon', name: 'Name', itemtype: 'Type', ac: 'AC', hp: 'HP', mana: 'Mana',
     astr: 'STR', asta: 'STA', adex: 'DEX', aagi: 'AGI', awis: 'WIS', aint: 'INT', acha: 'CHA',
     mr: 'MR', cr: 'CR', fr: 'FR', pr: 'PR', dr: 'DR'
 };
-
 const CLASS_MAP = {
     1: "Warrior", 2: "Cleric", 4: "Paladin", 8: "Ranger", 16: "Shadow Knight", 32: "Druid",
     64: "Monk", 128: "Bard", 256: "Rogue", 512: "Shaman", 1024: "Necromancer", 2048: "Wizard",
     4096: "Magician", 8192: "Enchanter", 16384: "Beastlord", 32768: "Berserker"
 };
-
 const RACE_MAP = {
     1: "Human", 2: "Barbarian", 4: "Erudite", 8: "Wood Elf", 16: "High Elf", 32: "Dark Elf",
     64: "Half Elf", 128: "Dwarf", 256: "Troll", 512: "Ogre", 1024: "Halfling", 2048: "Gnome",
     4096: "Iksar", 8192: "Vah Shir", 16384: "Froglok", 32768: "Drakkin"
 };
-
 const SLOT_MAP = {
     1: "Charm", 2: "Ear", 4: "Head", 8: "Face", 16: "Ear", 32: "Neck", 64: "Shoulder",
     128: "Arms", 256: "Back", 512: "Bracer", 1024: "Bracer", 2048: "Range", 4096: "Hands",
     8192: "Primary", 16384: "Secondary", 32768: "Ring", 65536: "Ring", 131072: "Chest",
     262144: "Legs", 524288: "Feet", 1048576: "Waist", 2097152: "Powersource", 4194304: "Ammo"
 };
-
-const SKILL_MAP = {
+const ITEM_SKILL_MAP = {
     0: "1H Slashing", 1: "2H Slashing", 2: "1H Piercing", 3: "1H Blunt", 4: "2H Blunt",
     5: "Archery", 7: "Throwing", 35: "2H Piercing", 45: "Hand to Hand"
 };
-
 const SIZE_MAP = { 0: "TINY", 1: "SMALL", 2: "MEDIUM", 3: "LARGE", 4: "GIANT", 5: "GIGANTIC" };
+const WEAPON_TYPES = Object.keys(ITEM_SKILL_MAP).map(Number);
 
-const WEAPON_TYPES = [0, 1, 2, 3, 4, 5, 7, 35, 45];
-
+// --- HELPER FUNCTIONS ---
 function decodeBitmask(mask, map) {
     const names = [];
     for (const key in map) {
@@ -48,10 +44,24 @@ function decodeBitmask(mask, map) {
     return [...new Set(names)];
 }
 
+function formatCoin(price) {
+    const plat = Math.floor(price / 1000);
+    const gold = Math.floor((price % 1000) / 100);
+    const silver = Math.floor((price % 100) / 10);
+    const copper = price % 10;
+    return `${plat}p ${gold}g ${silver}s ${copper}c`;
+}
+
+// --- GLOBAL VARIABLES ---
 let tooltip;
 let breakdownContainer;
+let currentItems = [];
+let currentSort = { column: 'name', direction: 'asc' };
+let currentView = 'grid';
 
-function showItemTooltip(item, event) {
+
+// --- UI RENDERING FUNCTIONS ---
+async function showItemTooltip(item, event) {
     let flags = [];
     if (item.magic) flags.push('MAGIC ITEM');
     if (item.loregroup >= 0 && item.loregroup !== null) flags.push('LORE ITEM');
@@ -61,57 +71,79 @@ function showItemTooltip(item, event) {
     let html = `<div class="tooltip-title">${item.name}</div>`;
     if (flags.length > 0) { html += `<div class="tooltip-flags">${flags.join(' ')}</div>`; }
 
-    let detailsHtml = '';
+    let slotHtml = '';
     const slots = decodeBitmask(item.slots, SLOT_MAP);
     if (slots.length > 0) {
-        detailsHtml += `<span class="tooltip-stat-label">Slot:</span><span class="tooltip-stat-value">${slots.join(', ')}</span>`;
+        slotHtml += `<span class="tooltip-stat-label">Slot:</span><span class="tooltip-stat-value">${slots.join(', ')}</span>`;
     }
-    html += `<div class="tooltip-section">${detailsHtml}</div>`;
+    if (item.ac) {
+        slotHtml += `<span class="tooltip-stat-label">AC:</span><span class="tooltip-stat-value">${item.ac}</span>`;
+    }
+    if (slotHtml) { html += `<div class="tooltip-section">${slotHtml}</div>`; }
+
+    if (WEAPON_TYPES.includes(item.itemtype)) {
+        let weaponHtml = '';
+        weaponHtml += `<span class="tooltip-stat-label">DMG:</span><span class="tooltip-stat-value">${item.damage}</span>`;
+        weaponHtml += `<span class="tooltip-stat-label">Delay:</span><span class="tooltip-stat-value">${item.delay}</span>`;
+         if (item.damage > 0) {
+            weaponHtml += `<span class="tooltip-stat-label">Ratio:</span><span class="tooltip-stat-value">${(item.delay / item.damage).toFixed(2)}</span>`;
+        }
+        html += `<div class="tooltip-section">${weaponHtml}</div>`;
+    }
 
     let statsHtml = '';
-    const statPairs = { 'STR': item.astr, 'DEX': item.adex, 'STA': item.asta, 'CHA': item.acha, 'WIS': item.awis, 'INT': item.aint, 'AGI': item.aagi };
+    const statPairs = { 'STR': item.astr, 'STA': item.asta, 'DEX': item.adex, 'AGI': item.aagi, 'WIS': item.awis, 'INT': item.aint, 'CHA': item.acha };
     for(const [key, value] of Object.entries(statPairs)) {
-        if(value) statsHtml += `<span class="tooltip-stat-label">${key}:</span><span class="tooltip-stat-value">+${value}</span>`;
+        if(value) statsHtml += `<span class="tooltip-stat-label">${key}:</span><span class="tooltip-stat-value">${value > 0 ? '+' : ''}${value}</span>`;
     }
     if (item.hp) statsHtml += `<span class="tooltip-stat-label">HP:</span><span class="tooltip-stat-value">+${item.hp}</span>`;
     if (item.mana) statsHtml += `<span class="tooltip-stat-label">MANA:</span><span class="tooltip-stat-value">+${item.mana}</span>`;
     if (statsHtml) { html += `<div class="tooltip-section">${statsHtml}</div>`; }
 
     let resistsHtml = '';
-    const resistPairs = { 'SV MAGIC': item.mr, 'SV FIRE': item.fr, 'SV COLD': item.cr, 'SV POISON': item.pr, 'SV DISEASE': item.dr };
+    const resistPairs = { 'SV FIRE': item.fr, 'SV DISEASE': item.dr, 'SV COLD': item.cr, 'SV MAGIC': item.mr, 'SV POISON': item.pr };
     for(const [key, value] of Object.entries(resistPairs)) {
-        if(value) resistsHtml += `<span class="tooltip-stat-label">${key}:</span><span class="tooltip-stat-value">+${value}</span>`;
+        if(value) resistsHtml += `<span class="tooltip-stat-label">${key}:</span><span class="tooltip-stat-value">${value > 0 ? '+' : ''}${value}</span>`;
     }
     if(resistsHtml) { html += `<div class="tooltip-section">${resistsHtml}</div>`; }
 
-    if (WEAPON_TYPES.includes(item.itemtype)) {
-        let weaponHtml = '';
-        weaponHtml += `<span class="tooltip-stat-label">Skill:</span><span class="tooltip-stat-value">${SKILL_MAP[item.itemskill] || 'Unknown'}</span>`;
-        weaponHtml += `<span class="tooltip-stat-label">DMG:</span><span class="tooltip-stat-value">${item.damage}</span>`;
-        weaponHtml += `<span class="tooltip-stat-label">Delay:</span><span class="tooltip-stat-value">${item.delay}</span>`;
-        if (item.dmbg) {
-             weaponHtml += `<span class="tooltip-stat-label">DMG Bonus:</span><span class="tooltip-stat-value">${item.dmbg}</span>`;
+    // Proc Effect
+    if (item.proceffect && item.proceffect > 0 && item.proceffect !== 65535) {
+        const { data: spell, error } = await supabaseClient.from('spells_new').select('name').eq('id', item.proceffect).single();
+        if (spell) {
+             html += `<div class="tooltip-section"><span class="tooltip-stat-label">Effect:</span><span class="tooltip-stat-value">${spell.name} (Combat)</span></div>`;
         }
-        html += `<div class="tooltip-section">${weaponHtml}</div>`;
     }
 
     let miscHtml = '';
-    miscHtml += `<span class="tooltip-stat-label">Weight:</span><span class="tooltip-stat-value">${item.weight / 10}</span>`;
+    miscHtml += `<span class="tooltip-stat-label">Weight:</span><span class="tooltip-stat-value">${(item.weight / 10).toFixed(1)}</span>`;
     miscHtml += `<span class="tooltip-stat-label">Size:</span><span class="tooltip-stat-value">${SIZE_MAP[item.size] || 'UNKNOWN'}</span>`;
+     if (WEAPON_TYPES.includes(item.itemtype)) {
+        miscHtml += `<span class="tooltip-stat-label">Skill:</span><span class="tooltip-stat-value">${ITEM_SKILL_MAP[item.itemtype] || 'Unknown'}</span>`;
+    }
     if(item.price > 0) {
-        let sellPrice = `${Math.floor(item.price / 1000)}p ${Math.floor((item.price % 1000) / 100)}g ${Math.floor((item.price % 100) / 10)}s ${item.price % 10}c`;
-        miscHtml += `<span class="tooltip-stat-label">Vendor Sell:</span><span class="tooltip-stat-value">${sellPrice}</span>`;
+        miscHtml += `<span class="tooltip-stat-label">Vendor Sell:</span><span class="tooltip-stat-value">${formatCoin(item.price)}</span>`;
     }
     html += `<div class="tooltip-section">${miscHtml}</div>`;
 
-    const classes = decodeBitmask(item.classes, CLASS_MAP);
-    if (classes.length > 0 && classes.length < Object.keys(CLASS_MAP).length) {
-        html += `<div class="tooltip-section"><span class="tooltip-stat-label">Class:</span> <span class="tooltip-stat-value">${classes.join(', ')}</span></div>`;
+    let restrictionHtml = '';
+    if (item.classes === 65535) {
+        restrictionHtml += `<span class="tooltip-stat-label">Class:</span><span class="tooltip-stat-value">ALL</span>`;
+    } else {
+        const classes = decodeBitmask(item.classes, CLASS_MAP);
+        if (classes.length > 0) {
+            restrictionHtml += `<span class="tooltip-stat-label">Class:</span><span class="tooltip-stat-value">${classes.join(', ')}</span>`;
+        }
     }
-    const races = decodeBitmask(item.races, RACE_MAP);
-     if (races.length > 0 && races.length < Object.keys(RACE_MAP).length) {
-        html += `<div class="tooltip-section"><span class="tooltip-stat-label">Race:</span> <span class="tooltip-stat-value">${races.join(', ')}</span></div>`;
+    if (item.races === 65535) {
+        restrictionHtml += `<span class="tooltip-stat-label">Race:</span><span class="tooltip-stat-value">ALL</span>`;
+    } else {
+        const races = decodeBitmask(item.races, RACE_MAP);
+        if (races.length > 0) {
+            restrictionHtml += `<span class="tooltip-stat-label">Race:</span><span class="tooltip-stat-value">${races.join(', ')}</span>`;
+        }
     }
+    if (restrictionHtml) { html += `<div class="tooltip-section">${restrictionHtml}</div>`; }
 
     if (item.lore) { html += `<div class="tooltip-lore">${item.lore}</div>`; }
 
@@ -277,6 +309,7 @@ async function getObtainInfo(itemId, itemName, itemIcon) {
     renderBreakdown(data, itemName, itemIcon);
 }
 
+// --- MAIN SCRIPT ---
 document.addEventListener('DOMContentLoaded', () => {
     tooltip = document.getElementById('tooltip');
     breakdownContainer = document.getElementById('breakdown-container');
@@ -285,10 +318,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchButton = document.getElementById('search-button');
     const resultsContainer = document.getElementById('results-container');
     const viewToggleButton = document.getElementById('view-toggle-button');
-
-    let currentItems = [];
-    let currentSort = { column: 'name', direction: 'asc' };
-    let currentView = 'grid';
 
     function sortAndRender() {
         if (currentView === 'table' && currentSort.column) {

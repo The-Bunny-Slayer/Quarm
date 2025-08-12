@@ -316,7 +316,16 @@ nav a.active {
 
 .tooltip-section .tooltip-stat-label {
     grid-column: 1;
+    text-align: left;
 }
 .tooltip-section .tooltip-stat-value {
     grid-column: 2;
+    text-align: right;
+    font-weight: bold;
+}
+
+/* Make single-value items in a section span both columns */
+.tooltip-section span:only-child {
+    grid-column: 1 / -1;
+    text-align: left;
 }
