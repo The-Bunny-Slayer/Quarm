@@ -314,25 +314,42 @@ nav a.active {
     margin-right: 8px;
 }
 
+.tooltip-section {
+    display: grid;
+    gap: 2px 10px;
+    margin-bottom: 10px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 10px;
+}
+
 .tooltip-section .tooltip-stat-label {
     text-align: left;
 }
+
 .tooltip-section .tooltip-stat-value {
     text-align: right;
     font-weight: bold;
 }
 
-/* Default to a single column for things like slots, class/race list */
-.tooltip-section {
-    grid-template-columns: 1fr;
+/* Grids for stat blocks */
+.tooltip-grid-2, .tooltip-grid-3 {
+    grid-template-columns: repeat(2, 1fr auto);
 }
 
-/* Use a 2-column grid for simple stat pairs */
-.tooltip-grid-2 {
-    grid-template-columns: 1fr auto;
+@media (min-width: 400px) { /* Adjust breakpoint as needed */
+    .tooltip-grid-3 {
+        grid-template-columns: repeat(3, 1fr auto);
+    }
 }
 
-/* Use a 3-pair/6-column grid for dense stats */
-.tooltip-grid-3 {
-     grid-template-columns: repeat(3, 1fr auto);
+.tooltip-effect {
+    grid-column: 1 / -1; /* Span full width */
+}
+
+.tooltip-effect-desc {
+    font-style: italic;
+    color: #b0b0b0;
+    grid-column: 1 / -1; /* Span full width */
+    padding-left: 15px;
+    font-size: 0.9em;
 }

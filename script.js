@@ -72,20 +72,22 @@ async function getObtainInfo(itemId, itemName, itemIcon) {
     renderBreakdown(data, itemName, itemIcon);
 }
 
-async function getSpellName(spellId) {
+async function getSpellDetails(spellId) {
     if (!spellId || spellId <= 0 || spellId === 65535) return null;
     try {
-        const { data, error } = await supabaseClient.from('spells_new').select('name').eq('id', spellId).single();
+        // Assuming 'teleport_zone' is used for the description as researched
+        const { data, error } = await supabaseClient.from('spells_new').select('name, teleport_zone').eq('id', spellId).single();
         if (error) throw error;
-        return data ? data.name : null;
+        return data;
     } catch (error) {
-        console.error(`Error fetching spell name for ID ${spellId}:`, error);
+        console.error(`Error fetching spell details for ID ${spellId}:`, error);
         return null;
     }
 }
 
 // --- UI RENDERING ---
 async function showItemTooltip(item, event) {
+    tooltip.style.display = 'none'; // Hide tooltip while fetching new data
     let flags = [];
     if (item.magic) flags.push('MAGIC ITEM');
     if (item.loregroup >= 0 && item.loregroup !== null) flags.push('LORE ITEM');
@@ -99,7 +101,10 @@ async function showItemTooltip(item, event) {
     const slots = decodeBitmask(item.slots, SLOT_MAP);
     if (slots.length > 0) slotHtml += `<span class="tooltip-stat-label">Slot:</span><span class="tooltip-stat-value">${slots.join(', ')}</span>`;
     if (item.ac) slotHtml += `<span class="tooltip-stat-label">AC:</span><span class="tooltip-stat-value">${item.ac}</span>`;
-    if (slotHtml) html += `<div class="tooltip-section">${slotHtml}</div>`;
+    if (WEAPON_TYPES.includes(item.itemtype)) {
+        slotHtml += `<span class="tooltip-stat-label">Skill:</span><span class="tooltip-stat-value">${ITEM_SKILL_MAP[item.itemtype] || 'Unknown'}</span>`;
+    }
+    if (slotHtml) html += `<div class="tooltip-section tooltip-grid-3">${slotHtml}</div>`;
 
     if (WEAPON_TYPES.includes(item.itemtype)) {
         let weaponHtml = '';
@@ -128,9 +133,13 @@ async function showItemTooltip(item, event) {
     let effectsHtml = '';
     const effectTypes = { 'Click Effect': item.clickeffect, 'Worn Effect': item.worneffect, 'Proc Effect': item.proceffect, 'Focus Effect': item.focuseffect };
     for (const [label, spellId] of Object.entries(effectTypes)) {
-        const spellName = await getSpellName(spellId);
-        if (spellName) {
-            effectsHtml += `<span class="tooltip-stat-label">${label}:</span><span class="tooltip-stat-value">${spellName}</span>`;
+        const spell = await getSpellDetails(spellId);
+        if (spell && spell.name) {
+            effectsHtml += `<div class="tooltip-effect"><span class="tooltip-stat-label">${label}:</span><span class="tooltip-stat-value">${spell.name}</span>`;
+            if (spell.teleport_zone) { // Using teleport_zone for description
+                effectsHtml += `<div class="tooltip-effect-desc">${spell.teleport_zone}</div>`;
+            }
+            effectsHtml += `</div>`;
         }
     }
     if (effectsHtml) { html += `<div class="tooltip-section">${effectsHtml}</div>`; }
@@ -138,9 +147,6 @@ async function showItemTooltip(item, event) {
     let miscHtml = '';
     miscHtml += `<span class="tooltip-stat-label">Weight:</span><span class="tooltip-stat-value">${(item.weight / 10).toFixed(1)}</span>`;
     miscHtml += `<span class="tooltip-stat-label">Size:</span><span class="tooltip-stat-value">${SIZE_MAP[item.size] || 'UNKNOWN'}</span>`;
-     if (WEAPON_TYPES.includes(item.itemtype)) {
-        miscHtml += `<span class="tooltip-stat-label">Skill:</span><span class="tooltip-stat-value">${ITEM_SKILL_MAP[item.itemtype] || 'Unknown'}</span>`;
-    }
     if(item.price > 0) miscHtml += `<span class="tooltip-stat-label">Vendor Sell:</span><span class="tooltip-stat-value">${formatCoin(item.price)}</span>`;
     html += `<div class="tooltip-section tooltip-grid-2">${miscHtml}</div>`;
 
