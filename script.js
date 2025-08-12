@@ -75,8 +75,7 @@ async function getObtainInfo(itemId, itemName, itemIcon) {
 async function getSpellDetails(spellId) {
     if (!spellId || spellId <= 0 || spellId === 65535) return null;
     try {
-        // Assuming 'teleport_zone' is used for the description as researched
-        const { data, error } = await supabaseClient.from('spells_new').select('name, teleport_zone').eq('id', spellId).single();
+        const { data, error } = await supabaseClient.from('spells_new').select('name, cast_on_you').eq('id', spellId).single();
         if (error) throw error;
         return data;
     } catch (error) {
@@ -87,7 +86,7 @@ async function getSpellDetails(spellId) {
 
 // --- UI RENDERING ---
 async function showItemTooltip(item, event) {
-    tooltip.style.display = 'none'; // Hide tooltip while fetching new data
+    tooltip.style.display = 'none';
     let flags = [];
     if (item.magic) flags.push('MAGIC ITEM');
     if (item.loregroup >= 0 && item.loregroup !== null) flags.push('LORE ITEM');
@@ -136,8 +135,8 @@ async function showItemTooltip(item, event) {
         const spell = await getSpellDetails(spellId);
         if (spell && spell.name) {
             effectsHtml += `<div class="tooltip-effect"><span class="tooltip-stat-label">${label}:</span><span class="tooltip-stat-value">${spell.name}</span>`;
-            if (spell.teleport_zone) { // Using teleport_zone for description
-                effectsHtml += `<div class="tooltip-effect-desc">${spell.teleport_zone}</div>`;
+            if (spell.cast_on_you) {
+                effectsHtml += `<div class="tooltip-effect-desc">${spell.cast_on_you}</div>`;
             }
             effectsHtml += `</div>`;
         }
@@ -175,16 +174,6 @@ function hideTooltip() {
     if(tooltip) tooltip.style.display = 'none';
 }
 
-function createChecklistItem(text) {
-    const label = document.createElement('label');
-    label.className = 'checklist-item';
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    label.appendChild(checkbox);
-    label.appendChild(document.createTextNode(' ' + text));
-    return label;
-}
-
 function renderObtainmentTree(obtainmentData) {
     if (!obtainmentData || (!obtainmentData.components && !obtainmentData.sources)) {
         const textNode = document.createElement('span');
@@ -201,16 +190,9 @@ function renderObtainmentTree(obtainmentData) {
         const details = document.createElement('details');
         const summary = document.createElement('summary');
         let craftText = `Craft with ${obtainmentData.tradeskill || 'N/A'} (Trivial: ${obtainmentData.trivial || 'N/A'})`;
-        if (obtainmentData.type === 'quest') craftText = `Quest Hand-in`;
-        summary.appendChild(createChecklistItem(craftText));
+        if (obtainmentData.type === 'quest') craftText = `Quest Hand-in to ${obtainmentData.notes || 'N/A'}`;
+        summary.textContent = craftText;
         details.appendChild(summary);
-
-        if (obtainmentData.notes) {
-            const notesP = document.createElement('p');
-            notesP.className = 'quest-notes';
-            notesP.textContent = `to ${obtainmentData.notes}`;
-            details.appendChild(notesP);
-        }
 
         const componentsUl = document.createElement('ul');
         if (obtainmentData.components) {
@@ -220,9 +202,6 @@ function renderObtainmentTree(obtainmentData) {
                 const compLi = document.createElement('li');
                 const label = document.createElement('label');
                 label.className = 'checklist-item';
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.addEventListener('click', (e) => e.stopPropagation());
                 const icon = document.createElement('img');
                 icon.src = `https://www.pqdi.cc/static/icons/item_${itemData.icon}.png`;
                 icon.className = 'item-icon';
@@ -236,7 +215,6 @@ function renderObtainmentTree(obtainmentData) {
                     e.preventDefault();
                     getObtainInfo(itemData.id, itemData.name, itemData.icon);
                 });
-                label.appendChild(checkbox);
                 label.appendChild(icon);
                 label.appendChild(text);
                 compLi.appendChild(label);
@@ -322,6 +300,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultsContainer = document.getElementById('results-container');
     const viewToggleButton = document.getElementById('view-toggle-button');
 
+    let currentSort = { column: 'name', direction: 'asc' };
+
     function sortAndRender() {
         if (currentView === 'table' && currentSort.column) {
             currentItems.sort((a, b) => {
@@ -364,10 +344,8 @@ document.addEventListener('DOMContentLoaded', () => {
             nameSpan.textContent = item.name;
             itemDiv.appendChild(nameSpan);
 
-            img.addEventListener('mouseenter', (e) => showItemTooltip(item, e));
-            img.addEventListener('mouseleave', hideTooltip);
-            nameSpan.addEventListener('mouseenter', (e) => showItemTooltip(item, e));
-            nameSpan.addEventListener('mouseleave', hideTooltip);
+            itemDiv.addEventListener('mouseenter', (e) => showItemTooltip(item, e));
+            itemDiv.addEventListener('mouseleave', hideTooltip);
 
             itemDiv.addEventListener('mousemove', (e) => {
                 if(tooltip.style.display === 'block'){
