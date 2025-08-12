@@ -240,7 +240,8 @@ function renderBreakdown(data, itemName, itemIcon) {
 
 async function getObtainInfo(itemId, itemName, itemIcon) {
     breakdownContainer.innerHTML = `<p>Fetching details for ${itemName}...</p>`;
-    const { data, error } = await supabaseClient.rpc('get_full_obtainment_details', { p_item_id: itemId });
+    // Pass the second argument for cycle detection, starting with an empty array.
+    const { data, error } = await supabaseClient.rpc('get_full_obtainment_details', { p_item_id: itemId, p_visited: [] });
     if (error) {
         console.error(`Error fetching details for ${itemName}:`, error);
         breakdownContainer.innerHTML = `<p>Error fetching details: ${error.message}</p>`;
