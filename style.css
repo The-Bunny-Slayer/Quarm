@@ -315,17 +315,24 @@ nav a.active {
 }
 
 .tooltip-section .tooltip-stat-label {
-    grid-column: 1;
     text-align: left;
 }
 .tooltip-section .tooltip-stat-value {
-    grid-column: 2;
     text-align: right;
     font-weight: bold;
 }
 
-/* Make single-value items in a section span both columns */
-.tooltip-section span:only-child {
-    grid-column: 1 / -1;
-    text-align: left;
+/* Default to a single column for things like slots, class/race list */
+.tooltip-section {
+    grid-template-columns: 1fr;
+}
+
+/* Use a 2-column grid for simple stat pairs */
+.tooltip-grid-2 {
+    grid-template-columns: 1fr auto;
+}
+
+/* Use a 3-pair/6-column grid for dense stats */
+.tooltip-grid-3 {
+     grid-template-columns: repeat(3, 1fr auto);
 }

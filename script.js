@@ -45,6 +45,7 @@ function decodeBitmask(mask, map) {
 }
 
 function formatCoin(price) {
+    if (!price || price <= 0) return 'N/A';
     const plat = Math.floor(price / 1000);
     const gold = Math.floor((price % 1000) / 100);
     const silver = Math.floor((price % 100) / 10);
@@ -52,15 +53,38 @@ function formatCoin(price) {
     return `${plat}p ${gold}g ${silver}s ${copper}c`;
 }
 
-// --- GLOBAL VARIABLES ---
+// --- GLOBAL UI & DATA VARIABLES ---
 let tooltip;
 let breakdownContainer;
 let currentItems = [];
 let currentSort = { column: 'name', direction: 'asc' };
 let currentView = 'grid';
 
+// --- ASYNC DATA FETCHING ---
+async function getObtainInfo(itemId, itemName, itemIcon) {
+    breakdownContainer.innerHTML = `<p>Fetching details for ${itemName}...</p>`;
+    const { data, error } = await supabaseClient.rpc('get_full_obtainment_details', { p_item_id: itemId, p_visited: [] });
+    if (error) {
+        console.error(`Error fetching details for ${itemName}:`, error);
+        breakdownContainer.innerHTML = `<p>Error fetching details: ${error.message}</p>`;
+        return;
+    }
+    renderBreakdown(data, itemName, itemIcon);
+}
 
-// --- UI RENDERING FUNCTIONS ---
+async function getSpellName(spellId) {
+    if (!spellId || spellId <= 0 || spellId === 65535) return null;
+    try {
+        const { data, error } = await supabaseClient.from('spells_new').select('name').eq('id', spellId).single();
+        if (error) throw error;
+        return data ? data.name : null;
+    } catch (error) {
+        console.error(`Error fetching spell name for ID ${spellId}:`, error);
+        return null;
+    }
+}
+
+// --- UI RENDERING ---
 async function showItemTooltip(item, event) {
     let flags = [];
     if (item.magic) flags.push('MAGIC ITEM');
@@ -73,22 +97,16 @@ async function showItemTooltip(item, event) {
 
     let slotHtml = '';
     const slots = decodeBitmask(item.slots, SLOT_MAP);
-    if (slots.length > 0) {
-        slotHtml += `<span class="tooltip-stat-label">Slot:</span><span class="tooltip-stat-value">${slots.join(', ')}</span>`;
-    }
-    if (item.ac) {
-        slotHtml += `<span class="tooltip-stat-label">AC:</span><span class="tooltip-stat-value">${item.ac}</span>`;
-    }
-    if (slotHtml) { html += `<div class="tooltip-section">${slotHtml}</div>`; }
+    if (slots.length > 0) slotHtml += `<span class="tooltip-stat-label">Slot:</span><span class="tooltip-stat-value">${slots.join(', ')}</span>`;
+    if (item.ac) slotHtml += `<span class="tooltip-stat-label">AC:</span><span class="tooltip-stat-value">${item.ac}</span>`;
+    if (slotHtml) html += `<div class="tooltip-section">${slotHtml}</div>`;
 
     if (WEAPON_TYPES.includes(item.itemtype)) {
         let weaponHtml = '';
         weaponHtml += `<span class="tooltip-stat-label">DMG:</span><span class="tooltip-stat-value">${item.damage}</span>`;
         weaponHtml += `<span class="tooltip-stat-label">Delay:</span><span class="tooltip-stat-value">${item.delay}</span>`;
-         if (item.damage > 0) {
-            weaponHtml += `<span class="tooltip-stat-label">Ratio:</span><span class="tooltip-stat-value">${(item.delay / item.damage).toFixed(2)}</span>`;
-        }
-        html += `<div class="tooltip-section">${weaponHtml}</div>`;
+        if (item.damage > 0) weaponHtml += `<span class="tooltip-stat-label">Ratio:</span><span class="tooltip-stat-value">${(item.delay / item.damage).toFixed(2)}</span>`;
+        html += `<div class="tooltip-section tooltip-grid-3">${weaponHtml}</div>`;
     }
 
     let statsHtml = '';
@@ -98,22 +116,24 @@ async function showItemTooltip(item, event) {
     }
     if (item.hp) statsHtml += `<span class="tooltip-stat-label">HP:</span><span class="tooltip-stat-value">+${item.hp}</span>`;
     if (item.mana) statsHtml += `<span class="tooltip-stat-label">MANA:</span><span class="tooltip-stat-value">+${item.mana}</span>`;
-    if (statsHtml) { html += `<div class="tooltip-section">${statsHtml}</div>`; }
+    if (statsHtml) html += `<div class="tooltip-section tooltip-grid-3">${statsHtml}</div>`;
 
     let resistsHtml = '';
     const resistPairs = { 'SV FIRE': item.fr, 'SV DISEASE': item.dr, 'SV COLD': item.cr, 'SV MAGIC': item.mr, 'SV POISON': item.pr };
     for(const [key, value] of Object.entries(resistPairs)) {
         if(value) resistsHtml += `<span class="tooltip-stat-label">${key}:</span><span class="tooltip-stat-value">${value > 0 ? '+' : ''}${value}</span>`;
     }
-    if(resistsHtml) { html += `<div class="tooltip-section">${resistsHtml}</div>`; }
+    if(resistsHtml) html += `<div class="tooltip-section tooltip-grid-3">${resistsHtml}</div>`;
 
-    // Proc Effect
-    if (item.proceffect && item.proceffect > 0 && item.proceffect !== 65535) {
-        const { data: spell, error } = await supabaseClient.from('spells_new').select('name').eq('id', item.proceffect).single();
-        if (spell) {
-             html += `<div class="tooltip-section"><span class="tooltip-stat-label">Effect:</span><span class="tooltip-stat-value">${spell.name} (Combat)</span></div>`;
+    let effectsHtml = '';
+    const effectTypes = { 'Click Effect': item.clickeffect, 'Worn Effect': item.worneffect, 'Proc Effect': item.proceffect, 'Focus Effect': item.focuseffect };
+    for (const [label, spellId] of Object.entries(effectTypes)) {
+        const spellName = await getSpellName(spellId);
+        if (spellName) {
+            effectsHtml += `<span class="tooltip-stat-label">${label}:</span><span class="tooltip-stat-value">${spellName}</span>`;
         }
     }
+    if (effectsHtml) { html += `<div class="tooltip-section">${effectsHtml}</div>`; }
 
     let miscHtml = '';
     miscHtml += `<span class="tooltip-stat-label">Weight:</span><span class="tooltip-stat-value">${(item.weight / 10).toFixed(1)}</span>`;
@@ -121,27 +141,21 @@ async function showItemTooltip(item, event) {
      if (WEAPON_TYPES.includes(item.itemtype)) {
         miscHtml += `<span class="tooltip-stat-label">Skill:</span><span class="tooltip-stat-value">${ITEM_SKILL_MAP[item.itemtype] || 'Unknown'}</span>`;
     }
-    if(item.price > 0) {
-        miscHtml += `<span class="tooltip-stat-label">Vendor Sell:</span><span class="tooltip-stat-value">${formatCoin(item.price)}</span>`;
-    }
-    html += `<div class="tooltip-section">${miscHtml}</div>`;
+    if(item.price > 0) miscHtml += `<span class="tooltip-stat-label">Vendor Sell:</span><span class="tooltip-stat-value">${formatCoin(item.price)}</span>`;
+    html += `<div class="tooltip-section tooltip-grid-2">${miscHtml}</div>`;
 
     let restrictionHtml = '';
     if (item.classes === 65535) {
         restrictionHtml += `<span class="tooltip-stat-label">Class:</span><span class="tooltip-stat-value">ALL</span>`;
     } else {
         const classes = decodeBitmask(item.classes, CLASS_MAP);
-        if (classes.length > 0) {
-            restrictionHtml += `<span class="tooltip-stat-label">Class:</span><span class="tooltip-stat-value">${classes.join(', ')}</span>`;
-        }
+        if (classes.length > 0) restrictionHtml += `<span class="tooltip-stat-label">Class:</span><span class="tooltip-stat-value">${classes.join(', ')}</span>`;
     }
     if (item.races === 65535) {
         restrictionHtml += `<span class="tooltip-stat-label">Race:</span><span class="tooltip-stat-value">ALL</span>`;
     } else {
         const races = decodeBitmask(item.races, RACE_MAP);
-        if (races.length > 0) {
-            restrictionHtml += `<span class="tooltip-stat-label">Race:</span><span class="tooltip-stat-value">${races.join(', ')}</span>`;
-        }
+        if (races.length > 0) restrictionHtml += `<span class="tooltip-stat-label">Race:</span><span class="tooltip-stat-value">${races.join(', ')}</span>`;
     }
     if (restrictionHtml) { html += `<div class="tooltip-section">${restrictionHtml}</div>`; }
 
@@ -149,8 +163,6 @@ async function showItemTooltip(item, event) {
 
     tooltip.innerHTML = html;
     tooltip.style.display = 'block';
-    tooltip.style.left = (event.pageX + 20) + 'px';
-    tooltip.style.top = (event.pageY + 20) + 'px';
 }
 
 function hideTooltip() {
@@ -183,9 +195,7 @@ function renderObtainmentTree(obtainmentData) {
         const details = document.createElement('details');
         const summary = document.createElement('summary');
         let craftText = `Craft with ${obtainmentData.tradeskill || 'N/A'} (Trivial: ${obtainmentData.trivial || 'N/A'})`;
-        if (obtainmentData.type === 'quest') {
-            craftText = `Quest Hand-in`;
-        }
+        if (obtainmentData.type === 'quest') craftText = `Quest Hand-in`;
         summary.appendChild(createChecklistItem(craftText));
         details.appendChild(summary);
 
@@ -199,6 +209,7 @@ function renderObtainmentTree(obtainmentData) {
         const componentsUl = document.createElement('ul');
         if (obtainmentData.components) {
             obtainmentData.components.forEach(comp => {
+                if (!comp.item_data) return;
                 const itemData = comp.item_data;
                 const compLi = document.createElement('li');
                 const label = document.createElement('label');
@@ -241,9 +252,7 @@ function renderObtainmentTree(obtainmentData) {
         }
         const sourcesByZone = obtainmentData.sources.reduce((acc, source) => {
             const zone = source.zone || 'Unknown Zone';
-            if (!acc[zone]) {
-                acc[zone] = [];
-            }
+            if (!acc[zone]) acc[zone] = [];
             acc[zone].push(source);
             return acc;
         }, {});
@@ -252,8 +261,7 @@ function renderObtainmentTree(obtainmentData) {
             const li = document.createElement('li');
             const details = document.createElement('details');
             const summary = document.createElement('summary');
-            const summaryText = `Obtained in <span class="zone-name">${zoneName}</span>`;
-            summary.innerHTML = summaryText;
+            summary.innerHTML = `Obtained in <span class="zone-name">${zoneName}</span>`;
             details.appendChild(summary);
 
             const npcUl = document.createElement('ul');
@@ -296,17 +304,6 @@ function renderBreakdown(data, itemName, itemIcon) {
     } else {
         breakdownContainer.innerHTML += '<p>No obtainment information found.</p>';
     }
-}
-
-async function getObtainInfo(itemId, itemName, itemIcon) {
-    breakdownContainer.innerHTML = `<p>Fetching details for ${itemName}...</p>`;
-    const { data, error } = await supabaseClient.rpc('get_full_obtainment_details', { p_item_id: itemId, p_visited: [] });
-    if (error) {
-        console.error(`Error fetching details for ${itemName}:`, error);
-        breakdownContainer.innerHTML = `<p>Error fetching details: ${error.message}</p>`;
-        return;
-    }
-    renderBreakdown(data, itemName, itemIcon);
 }
 
 // --- MAIN SCRIPT ---
@@ -367,8 +364,10 @@ document.addEventListener('DOMContentLoaded', () => {
             nameSpan.addEventListener('mouseleave', hideTooltip);
 
             itemDiv.addEventListener('mousemove', (e) => {
-                tooltip.style.left = (e.pageX + 20) + 'px';
-                tooltip.style.top = (e.pageY + 20) + 'px';
+                if(tooltip.style.display === 'block'){
+                    tooltip.style.left = (e.pageX + 20) + 'px';
+                    tooltip.style.top = (e.pageY + 20) + 'px';
+                }
             });
 
             grid.appendChild(itemDiv);
