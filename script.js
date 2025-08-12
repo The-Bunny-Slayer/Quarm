@@ -29,6 +29,15 @@ const SLOT_MAP = {
     262144: "Legs", 524288: "Feet", 1048576: "Waist", 2097152: "Powersource", 4194304: "Ammo"
 };
 
+const SKILL_MAP = {
+    0: "1H Slashing", 1: "2H Slashing", 2: "1H Piercing", 3: "1H Blunt", 4: "2H Blunt",
+    5: "Archery", 7: "Throwing", 35: "2H Piercing", 45: "Hand to Hand"
+};
+
+const SIZE_MAP = { 0: "TINY", 1: "SMALL", 2: "MEDIUM", 3: "LARGE", 4: "GIANT", 5: "GIGANTIC" };
+
+const WEAPON_TYPES = [0, 1, 2, 3, 4, 5, 7, 35, 45];
+
 function decodeBitmask(mask, map) {
     const names = [];
     for (const key in map) {
@@ -39,7 +48,6 @@ function decodeBitmask(mask, map) {
     return [...new Set(names)];
 }
 
-// Global variables that will be initialized in DOMContentLoaded
 let tooltip;
 let breakdownContainer;
 
@@ -53,26 +61,48 @@ function showItemTooltip(item, event) {
     let html = `<div class="tooltip-title">${item.name}</div>`;
     if (flags.length > 0) { html += `<div class="tooltip-flags">${flags.join(' ')}</div>`; }
 
+    let detailsHtml = '';
     const slots = decodeBitmask(item.slots, SLOT_MAP);
     if (slots.length > 0) {
-        html += `<div class="tooltip-section"><span class="tooltip-stat-label">Slot:</span> <span class="tooltip-stat-value">${slots.join(', ')}</span></div>`;
+        detailsHtml += `<span class="tooltip-stat-label">Slot:</span><span class="tooltip-stat-value">${slots.join(', ')}</span>`;
     }
+    html += `<div class="tooltip-section">${detailsHtml}</div>`;
 
     let statsHtml = '';
     const statPairs = { 'STR': item.astr, 'DEX': item.adex, 'STA': item.asta, 'CHA': item.acha, 'WIS': item.awis, 'INT': item.aint, 'AGI': item.aagi };
-    const resistPairs = { 'SV MAGIC': item.mr, 'SV FIRE': item.fr, 'SV COLD': item.cr, 'SV POISON': item.pr, 'SV DISEASE': item.dr };
     for(const [key, value] of Object.entries(statPairs)) {
         if(value) statsHtml += `<span class="tooltip-stat-label">${key}:</span><span class="tooltip-stat-value">+${value}</span>`;
     }
-     if (item.hp) statsHtml += `<span class="tooltip-stat-label">HP:</span><span class="tooltip-stat-value">+${item.hp}</span>`;
+    if (item.hp) statsHtml += `<span class="tooltip-stat-label">HP:</span><span class="tooltip-stat-value">+${item.hp}</span>`;
     if (item.mana) statsHtml += `<span class="tooltip-stat-label">MANA:</span><span class="tooltip-stat-value">+${item.mana}</span>`;
     if (statsHtml) { html += `<div class="tooltip-section">${statsHtml}</div>`; }
 
     let resistsHtml = '';
+    const resistPairs = { 'SV MAGIC': item.mr, 'SV FIRE': item.fr, 'SV COLD': item.cr, 'SV POISON': item.pr, 'SV DISEASE': item.dr };
     for(const [key, value] of Object.entries(resistPairs)) {
         if(value) resistsHtml += `<span class="tooltip-stat-label">${key}:</span><span class="tooltip-stat-value">+${value}</span>`;
     }
     if(resistsHtml) { html += `<div class="tooltip-section">${resistsHtml}</div>`; }
+
+    if (WEAPON_TYPES.includes(item.itemtype)) {
+        let weaponHtml = '';
+        weaponHtml += `<span class="tooltip-stat-label">Skill:</span><span class="tooltip-stat-value">${SKILL_MAP[item.itemskill] || 'Unknown'}</span>`;
+        weaponHtml += `<span class="tooltip-stat-label">DMG:</span><span class="tooltip-stat-value">${item.damage}</span>`;
+        weaponHtml += `<span class="tooltip-stat-label">Delay:</span><span class="tooltip-stat-value">${item.delay}</span>`;
+        if (item.dmbg) {
+             weaponHtml += `<span class="tooltip-stat-label">DMG Bonus:</span><span class="tooltip-stat-value">${item.dmbg}</span>`;
+        }
+        html += `<div class="tooltip-section">${weaponHtml}</div>`;
+    }
+
+    let miscHtml = '';
+    miscHtml += `<span class="tooltip-stat-label">Weight:</span><span class="tooltip-stat-value">${item.weight / 10}</span>`;
+    miscHtml += `<span class="tooltip-stat-label">Size:</span><span class="tooltip-stat-value">${SIZE_MAP[item.size] || 'UNKNOWN'}</span>`;
+    if(item.price > 0) {
+        let sellPrice = `${Math.floor(item.price / 1000)}p ${Math.floor((item.price % 1000) / 100)}g ${Math.floor((item.price % 100) / 10)}s ${item.price % 10}c`;
+        miscHtml += `<span class="tooltip-stat-label">Vendor Sell:</span><span class="tooltip-stat-value">${sellPrice}</span>`;
+    }
+    html += `<div class="tooltip-section">${miscHtml}</div>`;
 
     const classes = decodeBitmask(item.classes, CLASS_MAP);
     if (classes.length > 0 && classes.length < Object.keys(CLASS_MAP).length) {
@@ -117,24 +147,26 @@ function renderObtainmentTree(obtainmentData) {
     ul.className = 'obtainment-list';
 
     if (obtainmentData.type === 'craft' || obtainmentData.type === 'quest') {
-        const recipe = obtainmentData;
         const li = document.createElement('li');
-        let craftText = `Craft with ${recipe.tradeskill || 'N/A'} (Trivial: ${recipe.trivial || 'N/A'})`;
-        if (recipe.type === 'quest') {
+        const details = document.createElement('details');
+        const summary = document.createElement('summary');
+        let craftText = `Craft with ${obtainmentData.tradeskill || 'N/A'} (Trivial: ${obtainmentData.trivial || 'N/A'})`;
+        if (obtainmentData.type === 'quest') {
             craftText = `Quest Hand-in`;
         }
-        li.appendChild(createChecklistItem(craftText));
+        summary.appendChild(createChecklistItem(craftText));
+        details.appendChild(summary);
 
-        if (recipe.notes) {
+        if (obtainmentData.notes) {
             const notesP = document.createElement('p');
             notesP.className = 'quest-notes';
-            notesP.textContent = `to ${recipe.notes}`;
-            li.appendChild(notesP);
+            notesP.textContent = `to ${obtainmentData.notes}`;
+            details.appendChild(notesP);
         }
 
         const componentsUl = document.createElement('ul');
-        if (recipe.components) {
-            recipe.components.forEach(comp => {
+        if (obtainmentData.components) {
+            obtainmentData.components.forEach(comp => {
                 const itemData = comp.item_data;
                 const compLi = document.createElement('li');
                 const label = document.createElement('label');
@@ -165,7 +197,8 @@ function renderObtainmentTree(obtainmentData) {
                 componentsUl.appendChild(compLi);
             });
         }
-        li.appendChild(componentsUl);
+        details.appendChild(componentsUl);
+        li.appendChild(details);
         ul.appendChild(li);
     } else if (obtainmentData.type === 'obtainment') {
         if (!obtainmentData.sources) {
@@ -174,7 +207,6 @@ function renderObtainmentTree(obtainmentData) {
              textNode.className = 'unknown-source';
              return textNode;
         }
-        // Group sources by zone
         const sourcesByZone = obtainmentData.sources.reduce((acc, source) => {
             const zone = source.zone || 'Unknown Zone';
             if (!acc[zone]) {
@@ -187,14 +219,12 @@ function renderObtainmentTree(obtainmentData) {
         for (const zoneName in sourcesByZone) {
             const li = document.createElement('li');
             const details = document.createElement('details');
-            details.open = true; // Default to open
             const summary = document.createElement('summary');
-            const summaryText = `Obtained from <span class="zone-name">${zoneName}</span>`;
+            const summaryText = `Obtained in <span class="zone-name">${zoneName}</span>`;
             summary.innerHTML = summaryText;
             details.appendChild(summary);
 
             const npcUl = document.createElement('ul');
-            // Sort vendors before mobs
             sourcesByZone[zoneName].sort((a, b) => {
                 if (a.type === 'vendor' && b.type !== 'vendor') return -1;
                 if (a.type !== 'vendor' && b.type === 'vendor') return 1;
@@ -220,14 +250,12 @@ function renderObtainmentTree(obtainmentData) {
 function renderBreakdown(data, itemName, itemIcon) {
     breakdownContainer.innerHTML = '';
     const header = document.createElement('h3');
-
     if (itemIcon) {
         const img = document.createElement('img');
         img.src = `https://www.pqdi.cc/static/icons/item_${itemIcon}.png`;
         img.className = 'breakdown-header-icon';
         header.appendChild(img);
     }
-
     header.appendChild(document.createTextNode(` Checklist for ${itemName}`));
     breakdownContainer.appendChild(header);
 
@@ -240,7 +268,6 @@ function renderBreakdown(data, itemName, itemIcon) {
 
 async function getObtainInfo(itemId, itemName, itemIcon) {
     breakdownContainer.innerHTML = `<p>Fetching details for ${itemName}...</p>`;
-    // Pass the second argument for cycle detection, starting with an empty array.
     const { data, error } = await supabaseClient.rpc('get_full_obtainment_details', { p_item_id: itemId, p_visited: [] });
     if (error) {
         console.error(`Error fetching details for ${itemName}:`, error);
@@ -251,12 +278,12 @@ async function getObtainInfo(itemId, itemName, itemIcon) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    tooltip = document.getElementById('tooltip');
+    breakdownContainer = document.getElementById('breakdown-container');
     const testButton = document.getElementById('testButton');
     const searchInput = document.getElementById('search-input');
     const searchButton = document.getElementById('search-button');
     const resultsContainer = document.getElementById('results-container');
-    breakdownContainer = document.getElementById('breakdown-container'); // Initialize global
-    tooltip = document.getElementById('tooltip'); // Initialize global
     const viewToggleButton = document.getElementById('view-toggle-button');
 
     let currentItems = [];
@@ -406,6 +433,5 @@ document.addEventListener('DOMContentLoaded', () => {
         performSearch(supabaseClient.from('items').select('*').ilike('name', `%${searchTerm}%`));
     });
 
-    // Initial draw to ensure the grid view is shown on page load
     drawResults();
 });

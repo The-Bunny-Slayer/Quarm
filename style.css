@@ -313,3 +313,10 @@ nav a.active {
     vertical-align: middle;
     margin-right: 8px;
 }
+
+.tooltip-section .tooltip-stat-label {
+    grid-column: 1;
+}
+.tooltip-section .tooltip-stat-value {
+    grid-column: 2;
+}
