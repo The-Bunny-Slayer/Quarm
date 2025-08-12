@@ -32,123 +32,122 @@
         <h1>Function Documentation</h1>
 
         <h2>get_full_obtainment_details(p_item_id INT)</h2>
-        <p>This database function takes an item ID and returns a JSON object representing the full, recursive crafting tree or drop information for that item.</p>
+        <p>This database function takes an item ID and returns a JSON object representing the full, recursive crafting tree or obtainment information (vendor or drop) for that item.</p>
 
         <h3>SQL Definition</h3>
         <pre><code>
-CREATE OR REPLACE FUNCTION get_full_obtainment_details(p_item_id INT)
-RETURNS jsonb AS $$
+CREATE OR REPLACE FUNCTION get_full_obtainment_details(p_item_id integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+AS $function$
 DECLARE
     result jsonb;
     recipe_info RECORD;
     component_info RECORD;
     final_components jsonb[] := '{}';
-    container_name text;
+    obtainment_sources jsonb;
 BEGIN
-    -- First, find the primary recipe for the target item
+    -- First, check if the item is crafted.
     SELECT INTO recipe_info *
     FROM tradeskill_recipe r
     JOIN tradeskill_recipe_entries tre ON r.id = tre.recipe_id
     WHERE tre.item_id = p_item_id AND tre.successcount > 0
     LIMIT 1;
 
-    -- If no recipe produces this item, find its drop source.
-    IF NOT FOUND THEN
-        SELECT jsonb_build_object(
-            'type', 'drop',
-            'sources', (
-                SELECT jsonb_agg(source_details) FROM (
-                    SELECT DISTINCT n.name AS npc_name, z.short_name AS zone_name
-                    FROM loottable_entries lte
-                    JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
-                    JOIN items i ON i.id = lde.item_id
-                    JOIN npc_types n ON n.loottable_id = lte.loottable_id
-                    JOIN spawnentry se ON se.npcID = n.id
-                    JOIN spawn2 s ON s.spawngroupID = se.spawngroupID
-                    JOIN zone z ON z.short_name = s.zone
-                    WHERE i.id = p_item_id
-                ) AS source_details
-            )
-        ) INTO result;
+    -- If it is a crafted item, process its components.
+    IF FOUND THEN
+        FOR component_info IN
+            SELECT i.id as item_id, tre.componentcount as qty, i.name as item_name, i.icon
+            FROM tradeskill_recipe_entries tre
+            JOIN items i ON i.id = tre.item_id
+            WHERE tre.recipe_id = recipe_info.recipe_id AND tre.componentcount > 0
+        LOOP
+            -- For each component, recursively get its details.
+            final_components := array_append(final_components, jsonb_build_object(
+                'item_data', jsonb_build_object('id', component_info.item_id, 'name', component_info.item_name, 'icon', component_info.icon, 'qty', component_info.qty),
+                'obtainment', get_full_obtainment_details(component_info.item_id)
+            ));
+        END LOOP;
+
+        result := jsonb_build_object(
+            'type', CASE WHEN recipe_info.tradeskill = 100 THEN 'quest' ELSE 'craft' END,
+            'tradeskill', (SELECT name FROM tradeskill_enum WHERE id = recipe_info.tradeskill),
+            'trivial', recipe_info.trivial,
+            'notes', recipe_info.notes, -- Quest NPC name stored here
+            'components', final_components
+        );
         RETURN result;
     END IF;
 
-    -- If it is a crafted item, loop through its components
-    FOR component_info IN
-        SELECT i.id as item_id, i.name as item_name, tre.componentcount as qty
-        FROM tradeskill_recipe_entries tre
-        JOIN items i ON i.id = tre.item_id
-        WHERE tre.recipe_id = recipe_info.recipe_id AND tre.componentcount > 0
-    LOOP
-        -- For each component, recursively call this function to get its breakdown
-        final_components := array_append(final_components, jsonb_build_object(
-            'item_id', component_info.item_id,
-            'item_name', component_info.item_name,
-            'qty', component_info.qty,
-            'obtainment', get_full_obtainment_details(component_info.item_id)
-        ));
-    END LOOP;
+    -- If not crafted, find vendors and drop sources.
+    SELECT jsonb_agg(source_details ORDER BY type) INTO obtainment_sources FROM (
+        -- VENDORS
+        SELECT
+            'vendor' AS type,
+            nt.name AS name,
+            z.long_name AS zone
+        FROM merchantlist ml
+        JOIN npc_types nt ON nt.merchant_id = ml.merchantid
+        JOIN spawnentry se ON se.npcID = nt.id
+        JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
+        JOIN zone z ON z.short_name = s2.zone
+        WHERE ml.item = p_item_id AND nt.class = 41
+        GROUP BY nt.name, z.long_name
 
-    -- Get container info
-    SELECT i.name INTO container_name
-    FROM tradeskill_recipe_entries tre
-    JOIN items i ON i.id = tre.item_id
-    WHERE tre.recipe_id = recipe_info.recipe_id AND tre.iscontainer IS TRUE
-    LIMIT 1;
+        UNION ALL
 
-    IF NOT FOUND THEN
-        container_name := 'None';
-    END IF;
+        -- MOB DROPS
+        SELECT
+            'mob_drop' AS type,
+            REPLACE(nt.name, '_', ' ') AS name,
+            z.long_name AS zone
+        FROM loottable_entries lte
+        JOIN lootdrop_entries lde ON lde.lootdrop_id = lte.lootdrop_id
+        JOIN npc_types nt ON nt.loottable_id = lte.loottable_id
+        JOIN spawnentry se ON se.npcID = nt.id
+        JOIN spawn2 s2 ON s2.spawngroupID = se.spawngroupID
+        JOIN zone z ON z.short_name = s2.zone
+        WHERE lde.item_id = p_item_id
+        GROUP BY nt.name, z.long_name
+    ) AS source_details;
 
-    -- Assemble the final JSON for the crafted item
     result := jsonb_build_object(
-        'type', 'craft',
-        'recipe_name', recipe_info.name,
-        'tradeskill', recipe_info.tradeskill,
-        'trivial', recipe_info.trivial,
-        'container', container_name,
-        'components', final_components
+        'type', 'obtainment',
+        'sources', obtainment_sources
     );
 
     RETURN result;
 END;
-$$ LANGUAGE plpgsql;
+$function$;
         </code></pre>
 
         <h3>Example Usage (JavaScript)</h3>
         <pre><code>
 const { data, error } = await supabaseClient
-  .rpc('get_full_obtainment_details', { p_item_id: 30165 }); // ID for Tranquilsong Platemail Gauntlets
+  .rpc('get_full_obtainment_details', { p_item_id: 1004 }); // ID for Water Flask
         </code></pre>
 
         <h3>Example JSON Output</h3>
         <pre><code>
-// This is a conceptual example. The actual output will be similar.
+// For a non-crafted item (e.g., Water Flask)
 {
-  "type": "craft",
-  "recipe_name": "Tranquilsong Platemail Gauntlets",
-  "tradeskill": "blacksmithing",
-  "trivial": 0,
-  "container": "Melodic Assembly Kit",
-  "components": [
+  "type": "obtainment",
+  "sources": [
     {
-      "item_id": 30159,
-      "item_name": "Tranquilsong Gauntlet Material",
-      "qty": 1,
-      "obtainment": {
-        "type": "craft",
-        "recipe_name": "Tranquilsong Gauntlet Material",
-        // ... further nesting ...
-      }
+      "type": "vendor",
+      "name": "Poisoner Gralin",
+      "zone": "East Freeport"
     },
     {
-      "item_id": 12345,
-      "item_name": "Enchanted Gauntlet Mold",
-      "qty": 1,
-      "obtainment": {
-        "type": "drop",
-        "sources": null
-      }
+      "type": "vendor",
+      "name": "Slopkeeper Udglorn",
+      "zone": "Oggok"
+    },
+    // ... more vendors
+    {
+      "type": "mob_drop",
+      "name": "a fire beetle",
+      "zone": "North Ro"
     }
   ]
 }

@@ -106,26 +106,32 @@ function createChecklistItem(text) {
 }
 
 function renderObtainmentTree(obtainmentData) {
-    if (!obtainmentData || (obtainmentData.type === 'drop' && !obtainmentData.sources)) {
+    if (!obtainmentData || (!obtainmentData.components && !obtainmentData.sources)) {
         const textNode = document.createElement('span');
-        textNode.textContent = ' (Vendor or Ground Spawn)';
+        textNode.textContent = ' (Details not available)';
         textNode.className = 'unknown-source';
         return textNode;
     }
+
     const ul = document.createElement('ul');
     ul.className = 'obtainment-list';
-    if (obtainmentData.type === 'craft') {
+
+    if (obtainmentData.type === 'craft' || obtainmentData.type === 'quest') {
         const recipe = obtainmentData;
         const li = document.createElement('li');
         let craftText = `Craft with ${recipe.tradeskill || 'N/A'} (Trivial: ${recipe.trivial || 'N/A'})`;
-        if (recipe.tradeskill === 100) { craftText = `Quest Hand-in`; }
+        if (recipe.type === 'quest') {
+            craftText = `Quest Hand-in`;
+        }
         li.appendChild(createChecklistItem(craftText));
+
         if (recipe.notes) {
             const notesP = document.createElement('p');
             notesP.className = 'quest-notes';
-            notesP.textContent = recipe.notes;
+            notesP.textContent = `to ${recipe.notes}`;
             li.appendChild(notesP);
         }
+
         const componentsUl = document.createElement('ul');
         if (recipe.components) {
             recipe.components.forEach(comp => {
@@ -147,13 +153,13 @@ function renderObtainmentTree(obtainmentData) {
                 text.title = 'Click to see breakdown for this component';
                 text.addEventListener('click', (e) => {
                     e.preventDefault();
-                    getObtainInfo(itemData.id, itemData.name);
+                    getObtainInfo(itemData.id, itemData.name, itemData.icon);
                 });
                 label.appendChild(checkbox);
                 label.appendChild(icon);
                 label.appendChild(text);
                 compLi.appendChild(label);
-                if(comp.obtainment) {
+                if (comp.obtainment) {
                     compLi.appendChild(renderObtainmentTree(comp.obtainment));
                 }
                 componentsUl.appendChild(compLi);
@@ -161,30 +167,48 @@ function renderObtainmentTree(obtainmentData) {
         }
         li.appendChild(componentsUl);
         ul.appendChild(li);
-    } else if (obtainmentData.type === 'drop') {
+    } else if (obtainmentData.type === 'obtainment') {
+        if (!obtainmentData.sources) {
+             const textNode = document.createElement('span');
+             textNode.textContent = ' (Ground Spawn or other)';
+             textNode.className = 'unknown-source';
+             return textNode;
+        }
+        // Group sources by zone
         const sourcesByZone = obtainmentData.sources.reduce((acc, source) => {
-            const zone = source.zone_name || 'Unknown Zone';
-            if (!acc[zone]) acc[zone] = [];
-            acc[zone].push(source.npc_name);
+            const zone = source.zone || 'Unknown Zone';
+            if (!acc[zone]) {
+                acc[zone] = [];
+            }
+            acc[zone].push(source);
             return acc;
         }, {});
+
         for (const zoneName in sourcesByZone) {
             const li = document.createElement('li');
             const details = document.createElement('details');
+            details.open = true; // Default to open
             const summary = document.createElement('summary');
-            const summaryText = `Dropped in <span class="zone-name">${zoneName}</span>`;
+            const summaryText = `Obtained from <span class="zone-name">${zoneName}</span>`;
             summary.innerHTML = summaryText;
             details.appendChild(summary);
+
             const npcUl = document.createElement('ul');
-            sourcesByZone[zoneName].forEach(npcName => {
+            // Sort vendors before mobs
+            sourcesByZone[zoneName].sort((a, b) => {
+                if (a.type === 'vendor' && b.type !== 'vendor') return -1;
+                if (a.type !== 'vendor' && b.type === 'vendor') return 1;
+                return a.name.localeCompare(b.name);
+            }).forEach(source => {
                 const npcLi = document.createElement('li');
                 npcLi.className = 'drop-source';
                 const npcSpan = document.createElement('span');
-                npcSpan.className = 'npc-name';
-                npcSpan.textContent = npcName;
+                npcSpan.className = source.type === 'vendor' ? 'vendor-name' : 'npc-name';
+                npcSpan.textContent = source.name;
                 npcLi.appendChild(npcSpan);
                 npcUl.appendChild(npcLi);
             });
+
             details.appendChild(npcUl);
             li.appendChild(details);
             ul.appendChild(li);
@@ -193,11 +217,20 @@ function renderObtainmentTree(obtainmentData) {
     return ul;
 }
 
-function renderBreakdown(data, itemName) {
+function renderBreakdown(data, itemName, itemIcon) {
     breakdownContainer.innerHTML = '';
     const header = document.createElement('h3');
-    header.textContent = `Checklist for ${itemName}`;
+
+    if (itemIcon) {
+        const img = document.createElement('img');
+        img.src = `https://www.pqdi.cc/static/icons/item_${itemIcon}.png`;
+        img.className = 'breakdown-header-icon';
+        header.appendChild(img);
+    }
+
+    header.appendChild(document.createTextNode(` Checklist for ${itemName}`));
     breakdownContainer.appendChild(header);
+
     if (data) {
         breakdownContainer.appendChild(renderObtainmentTree(data));
     } else {
@@ -205,7 +238,7 @@ function renderBreakdown(data, itemName) {
     }
 }
 
-async function getObtainInfo(itemId, itemName) {
+async function getObtainInfo(itemId, itemName, itemIcon) {
     breakdownContainer.innerHTML = `<p>Fetching details for ${itemName}...</p>`;
     const { data, error } = await supabaseClient.rpc('get_full_obtainment_details', { p_item_id: itemId });
     if (error) {
@@ -213,7 +246,7 @@ async function getObtainInfo(itemId, itemName) {
         breakdownContainer.innerHTML = `<p>Error fetching details: ${error.message}</p>`;
         return;
     }
-    renderBreakdown(data, itemName);
+    renderBreakdown(data, itemName, itemIcon);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -260,7 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentItems.forEach(item => {
             const itemDiv = document.createElement('div');
             itemDiv.className = 'grid-item';
-            itemDiv.addEventListener('click', () => getObtainInfo(item.id, item.name));
+            itemDiv.addEventListener('click', () => getObtainInfo(item.id, item.name, item.icon));
 
             const img = document.createElement('img');
             img.src = `https://www.pqdi.cc/static/icons/item_${item.icon || 1171}.png`;
@@ -309,7 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentItems.forEach(item => {
             const row = document.createElement('tr');
             row.style.cursor = 'pointer';
-            row.addEventListener('click', () => getObtainInfo(item.id, item.name));
+            row.addEventListener('click', () => getObtainInfo(item.id, item.name, item.icon));
             headers.forEach(headerKey => {
                 const cell = document.createElement('td');
                 if (headerKey === 'icon') {

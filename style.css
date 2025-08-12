@@ -302,3 +302,14 @@ nav a.active {
     vertical-align: middle;
     margin-right: 5px;
 }
+
+.vendor-name {
+    color: #4a90e2; /* Same as primary blue */
+}
+
+.breakdown-header-icon {
+    width: 28px;  /* Slightly larger than h3 font size */
+    height: 28px;
+    vertical-align: middle;
+    margin-right: 8px;
+}
