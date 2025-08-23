@@ -3,21 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Item Data Dump</title>
+    <title>Quest Details</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <nav>
         <a href="index.html">Search</a>
-        <a href="quest.html">Example Quest</a>
+        <a href="quest.html" class="active">Example Quest</a>
         <a href="docs.html">Docs</a>
-        <a href="data_dump.html" class="active">Data Dump</a>
+        <a href="data_dump.html">Data Dump</a>
     </nav>
-    <h1>Item Data Dump</h1>
-    <p>This page contains a raw JSON dump of all items in the database.</p>
-    <pre id="data-container">Loading...</pre>
+    <h1>Quest Details</h1>
+
+    <div id="quest-container">
+        <!-- Quest content will be rendered here by quest.js -->
+    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="data_dump.js"></script>
+    <script src="quest.js"></script>
 </body>
 </html>
