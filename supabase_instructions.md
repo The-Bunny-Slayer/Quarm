@@ -22,53 +22,34 @@ Your `quests` table is now ready to receive data.
 
 ---
 
-### Step 2: Run the Python Parser Script
+### Step 2: Run the Python Parser Script on a Directory
 
-The `parse_quest.py` script is designed to read a single Lua quest file and print a structured JSON object to your console.
+The `parse_quest.py` script is designed to read a directory, find all `.lua` files within it and its subdirectories, and create a single JSON file containing all the parsed quest data.
 
 1.  Make sure you have Python installed on your local machine.
 2.  Save the `parse_quest.py` script to your computer.
 3.  Open your command line or terminal.
-4.  Navigate to the directory where you saved the script.
-5.  Run the script on a quest file by passing the file path as an argument.
+4.  Run the script, passing the path to your main quest directory (e.g., `quests-main`) as an argument. It's recommended to redirect the output to a file.
 
 **Example Command:**
 ```bash
-python parse_quest.py /path/to/your/quests-main/gfaydark/Sarialiyn_Tranquilsong.lua
+python parse_quest.py /path/to/your/quests-main > all_quests.json
 ```
 
-The script will output a single block of JSON text to your terminal.
+This command will:
+-   Recursively parse all `.lua` files inside `/path/to/your/quests-main`.
+-   Create a new file named `all_quests.json` containing a single JSON array of all your parsed quest data.
 
 ---
 
-### Step 3: Insert the JSON Data into Supabase
+### Step 3: Bulk Import the JSON Data into Supabase
 
-Now, you will take the JSON output and add it as a new row in your `quests` table.
+Now, you will upload the `all_quests.json` file to populate your `quests` table.
 
-1.  Copy the entire JSON output from your terminal from Step 2.
-2.  Go back to the Supabase **Table Editor** and view your `quests` table.
-3.  Click on **"Insert"** -> **"Insert row"**.
-4.  You will see the `id` and `data` columns. Leave `id` blank (it will be auto-filled).
-5.  In the `data` column's input field, **paste the JSON output** you copied.
-6.  Click **"Save"** to insert the new quest.
+1.  Go back to the Supabase **Table Editor** and select your `quests` table.
+2.  Click on **"Insert"** -> **"Import data from CSV"**. (Note: This tool also accepts JSON arrays).
+3.  Drag and drop your `all_quests.json` file into the upload area.
+4.  Supabase will parse the file and show you a preview. It should correctly identify the `data` column. If it asks you to select a column, choose the `data` column.
+5.  Click **"Import"** to begin the bulk upload process.
 
-You have now successfully added one quest to your database! You can repeat Steps 2 and 3 for each Lua file to populate your entire quest database.
-
----
-
-**Tip for Bulk Processing (Optional):**
-
-If you are comfortable with shell scripting, you can automate the process for all files in a directory. For example, on Linux or macOS, you could do something like this to process all files in `gfaydark` and save the output to a single file:
-
-```bash
-# Navigate to the directory containing the Lua files
-cd /path/to/your/quests-main/gfaydark/
-
-# Run the parser on all .lua files and append the JSON to a single file
-for f in *.lua; do \
-  echo "Processing $f..." >> quests.json; \
-  python /path/to/parse_quest.py "$f" >> quests.json; \
-  echo "," >> quests.json; \
-done
-```
-This would give you a single large file (`quests.json`) containing all the JSON objects, which might be easier to work with for a bulk import into Supabase.
+Once the import is complete, your `quests` table will be fully populated with all the parsed quest data.

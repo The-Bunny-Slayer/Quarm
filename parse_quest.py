@@ -118,11 +118,22 @@ def parse_quest_file(file_path):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python parse_quest.py <path_to_lua_file>", file=sys.stderr)
+        print("Usage: python parse_quest.py <path_to_quests_directory>", file=sys.stderr)
         sys.exit(1)
 
-    file_path = sys.argv[1]
-    parsed_data = parse_quest_file(file_path)
+    root_dir = sys.argv[1]
+    if not os.path.isdir(root_dir):
+        print(f"Error: Provided path '{root_dir}' is not a directory.", file=sys.stderr)
+        sys.exit(1)
 
-    # Pretty-print the JSON output
-    print(json.dumps(parsed_data, indent=2))
+    all_quests_data = []
+    for subdir, _, files in os.walk(root_dir):
+        for file in files:
+            if file.endswith(".lua"):
+                file_path = os.path.join(subdir, file)
+                print(f"Parsing {file_path}...", file=sys.stderr)
+                parsed_data = parse_quest_file(file_path)
+                all_quests_data.append(parsed_data)
+
+    # Pretty-print the JSON array output
+    print(json.dumps(all_quests_data, indent=2))
