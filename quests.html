@@ -3,23 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quest Details</title>
+    <title>Quests by Zone</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <nav>
         <a href="index.html">Search</a>
-        <a href="quests.html?zone=gfaydark">GFaydark Quests</a>
+        <a href="quests.html?zone=gfaydark" class="active">GFaydark Quests</a>
         <a href="docs.html">Docs</a>
         <a href="data_dump.html">Data Dump</a>
     </nav>
-    <h1>Quest Details</h1>
+    <h1 id="zone-title">Quests</h1>
 
-    <div id="quest-container">
-        <!-- Quest content will be rendered here by quest.js -->
+    <div id="quest-list-container">
+        <!-- Quest list will be rendered here by quests.js -->
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="quest.js"></script>
+    <script src="quests.js"></script>
 </body>
 </html>
