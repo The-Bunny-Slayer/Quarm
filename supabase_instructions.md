@@ -1,55 +1,61 @@
 # Instructions for Populating the Quest Database
 
-Here is a step-by-step guide to use the `parse_quest.py` script to process your Lua quest files and upload the structured data into your Supabase project.
+Here is a step-by-step guide to use the `parse_quest.py` script to process your Lua quest files and upload the structured data into your Supabase project. This guide uses our recommended "hybrid" table structure for a good balance of query performance and flexibility.
 
 ---
 
-### Step 1: Create a `quests` Table in Supabase
+### Step 1: Create a `quests` Table with the Hybrid Schema
 
-You need a place to store the structured quest data. This step remains the same.
+First, you need to create a table in Supabase with columns that match the parser's output.
 
-1.  Navigate to your Supabase project dashboard.
-2.  Go to the **Table Editor**.
-3.  Click on **"New table"**.
-4.  Set the table name to **`quests`**.
-5.  Add a single column with the following properties:
-    *   **Name**: `data`
-    *   **Type**: `jsonb`
-6.  You can leave the `id` primary key column that Supabase creates by default.
-7.  Click **"Save"** to create the table.
+1.  Navigate to your Supabase project dashboard and go to the **Table Editor**.
+2.  Click on **"New table"**.
+3.  Set the table name to **`quests`**.
+4.  Remove the default `data` column if it exists.
+5.  Add the following columns. The `id` and `created_at` columns can be left as their default values.
+    *   `name` (type: `text`)
+    *   `zone` (type: `text`)
+    *   `npc` (type: `text`)
+    *   `rewards` (type: `jsonb`)
+    *   `prerequisites` (type: `jsonb`)
+    *   `walkthrough` (type: `jsonb`)
+    *   `source` (type: `jsonb`)
+6.  Click **"Save"** to create the table.
 
-Your `quests` table is now ready to receive data.
+Your `quests` table is now ready to receive the structured data.
 
 ---
 
-### Step 2: Run the Python Parser Script to Generate a CSV File
+### Step 2: Run the Python Parser Script
 
-The `parse_quest.py` script is designed to read a directory, find all `.lua` files within it and its subdirectories, and create a single CSV file containing all the parsed quest data.
+The script will now process your entire quest directory and create multiple, smaller CSV files (one for each zone), which will be placed in an output folder.
 
-1.  Make sure you have Python installed on your local machine.
-2.  Save the `parse_quest.py` script to your computer.
-3.  Open your command line or terminal.
-4.  Run the script, passing the path to your main quest directory (e.g., `quests-main`) as an argument. You **must** redirect the output to a `.csv` file.
+1.  Create a directory where you want the final CSV files to be saved (e.g., `quest_csvs`).
+2.  Open your command line or terminal.
+3.  Run the `parse_quest.py` script, providing two arguments:
+    1.  The path to your main quest directory (e.g., `quests-main`).
+    2.  The path to the output directory you just created.
 
 **Example Command:**
 ```bash
-python parse_quest.py /path/to/your/quests-main > all_quests.csv
+python parse_quest.py /path/to/your/quests-main /path/to/your/quest_csvs
 ```
 
 This command will:
 -   Recursively parse all `.lua` files inside `/path/to/your/quests-main`.
--   Create a new file named `all_quests.csv`. This file will have a single column named `data`, where each row contains the full JSON object for a single quest.
+-   Create a new `.csv` file for each zone (e.g., `gfaydark.csv`, `freportw.csv`) inside your `quest_csvs` directory.
 
 ---
 
-### Step 3: Bulk Import the CSV Data into Supabase
+### Step 3: Bulk Import the CSV Files into Supabase
 
-Now, you will upload the `all_quests.csv` file to populate your `quests` table.
+Now, you will upload each of the generated `.csv` files to populate your `quests` table. This process should be much more reliable with the smaller, per-zone files.
 
 1.  Go back to the Supabase **Table Editor** and select your `quests` table.
 2.  Click on **"Insert"** -> **"Import data from CSV"**.
-3.  Drag and drop your `all_quests.csv` file into the upload area.
-4.  Supabase will parse the file and show you a preview. It should correctly identify the `data` column and map the data from your file to it.
+3.  Drag and drop one of the new CSV files (e.g., `gfaydark.csv`) into the upload area.
+4.  Supabase will parse the file and show you a preview. It should **automatically match the columns** from your CSV file (`name`, `zone`, `npc`, etc.) to the columns in your database table.
 5.  Click **"Import"** to begin the bulk upload process.
+6.  Repeat this for each of the `.csv` files in your output directory.
 
-Once the import is complete, your `quests` table will be fully populated with all the parsed quest data.
+Once the imports are complete, your `quests` table will be fully and correctly populated.
